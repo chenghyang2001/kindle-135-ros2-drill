@@ -3,6 +3,7 @@
 用法：
     PYTHONUTF8=1 python tools/yt_upload_k135.py [--manifest PATH] [--only KEY] [--dry-run]
     PYTHONUTF8=1 python tools/yt_upload_k135.py status [--manifest PATH]
+    PYTHONUTF8=1 python tools/yt_upload_k135.py --replace full --replace highlight [--dry-run]
     PYTHONUTF8=1 python tools/yt_upload_k135.py --self-test
 
 安全設計：
@@ -10,6 +11,8 @@
 - 狀態存在 manifest 同目錄的 yt_state.json；已上傳的一律跳過，避免重複上傳。
 - 狀態檔遺失時，先比對頻道「上傳的影片」清單標題，同名就沿用，不重傳。
 - 配額用完存檔後 exit 75，隔天執行同一指令會從中斷處繼續。
+- --replace KEY：重傳該支影片（私人），新影片放進舊影片所在清單的同一位置，
+  再把舊影片移出清單；舊影片本身不刪，舊 id 記在 videos[KEY]["replaced"]。
 最後一行固定印 YT_UPLOAD_RESULT=OK|PARTIAL|QUOTA|ERROR，方便其他工具判讀。
 """
 import argparse
@@ -34,6 +37,9 @@ QUOTA_REASONS = {"quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded"}
 EXIT_QUOTA = 75
 
 # 播放清單定義：manifest 的 playlist 欄位 → 要加入哪些清單
+PRIVACY_CHECK_TRIES = 4
+PRIVACY_CHECK_WAIT_SEC = 5
+
 PLAYLISTS = {
     "drill": "K135 ROS 2 from Scratch｜雙視窗演練",
     "highlight": "K135 ROS 2 from Scratch｜精華版",
@@ -140,6 +146,65 @@ def plan_actions(entries, state):
         for pkey in MEMBERSHIP[entry["playlist"]]:
             if not vid or vid not in state["playlist_items"].get(pkey, []):
                 actions.append(("add_to_playlist", key, pkey))
+    return actions
+
+
+def pending_replacement(state, key):
+    """上次 --replace 已上傳新影片、但清單還沒換完時，回傳那筆 replaced 紀錄（續跑用）。"""
+    history = state["videos"].get(key, {}).get("replaced") or []
+    if history and not history[-1].get("playlists_done"):
+        return history[-1]
+    return None
+
+
+def replace_targets(entry, state, old_vid):
+    """要處理的清單：manifest 規定的清單＋狀態檔裡含舊影片的清單（去重、保序）。"""
+    targets = list(MEMBERSHIP[entry["playlist"]])
+    for pkey, vids in state["playlist_items"].items():
+        if old_vid in vids and pkey not in targets:
+            targets.append(pkey)
+    return targets
+
+
+def swap_in_list(items, old_vid, new_vid, position=None):
+    """在本機清單中把舊 id 換成新 id（保持位置）；舊 id 不在就插到 position 或最後。"""
+    items = [v for v in items if v != new_vid]
+    if old_vid in items:
+        items[items.index(old_vid)] = new_vid
+    elif position is not None and 0 <= position <= len(items):
+        items.insert(position, new_vid)
+    else:
+        items.append(new_vid)
+    return items
+
+
+def plan_replace(entries, state, keys):
+    """--replace 的待做事項（不連網），依狀態檔推算位置；實際執行時以 API 讀到的位置為準。"""
+    by_key = {e["key"]: e for e in entries}
+    actions = []
+    for key in keys:
+        entry = by_key.get(key)
+        if entry is None:
+            raise UploadError(f"--replace {key} 不在 manifest 中（可用：{list(by_key)}）")
+        pending = pending_replacement(state, key)
+        if pending:
+            old_vid, new_vid = pending["video_id"], state["videos"][key]["video_id"]
+            actions.append(("replace_resume", key, f"新影片 {new_vid} 已上傳，續做清單替換"))
+        else:
+            old_vid = state["videos"].get(key, {}).get("video_id")
+            if not old_vid:
+                raise UploadError(f"--replace {key}：狀態檔沒有舊影片 id，請改用一般上傳")
+            new_vid = None
+            actions.append(("replace_upload", key, entry["file"]))
+        actions.append(("verify_private", key, new_vid or "（新影片）"))
+        for pkey in replace_targets(entry, state, old_vid):
+            items = state["playlist_items"].get(pkey, [])
+            if old_vid in items:
+                actions.append(("playlist_swap", key,
+                                f"{pkey} 第 {items.index(old_vid) + 1} 位：{old_vid} → 新影片"))
+            else:
+                actions.append(("playlist_add", key, f"{pkey}（舊影片不在清單，加到最後）"))
+        actions.append(("keep_old", key, old_vid))
     return actions
 
 
@@ -307,6 +372,78 @@ def add_to_playlist(youtube, state, state_path, pkey, video_id):
     save_state(state_path, state)
 
 
+def verify_private(youtube, video_id):
+    """讀回新影片的 privacyStatus，不是 private 就報錯；剛上傳可能還查不到，稍等重試。"""
+    for attempt in range(PRIVACY_CHECK_TRIES):
+        resp = execute(youtube.videos().list(part="status", id=video_id),
+                       f"讀取影片 {video_id} 隱私狀態")
+        items = resp.get("items") or []
+        if items:
+            privacy = items[0].get("status", {}).get("privacyStatus")
+            if privacy != "private":
+                raise UploadError(f"新影片 {video_id} 的 privacyStatus 是 {privacy!r}，不是 private！"
+                                  f"已停止替換，請立刻到 YouTube Studio 檢查")
+            print(f"  隱私確認：{video_id} 為 private")
+            return
+        if attempt < PRIVACY_CHECK_TRIES - 1:
+            time.sleep(PRIVACY_CHECK_WAIT_SEC)
+    raise UploadError(f"讀不到新影片 {video_id}（重試 {PRIVACY_CHECK_TRIES} 次），無法確認隱私狀態")
+
+
+def list_playlist_entries(youtube, playlist_id, pkey):
+    """回傳清單內 [(playlistItem id, video_id, position)]。"""
+    entries, token = [], None
+    while True:
+        resp = execute(youtube.playlistItems().list(
+            part="snippet", playlistId=playlist_id, maxResults=50, pageToken=token),
+            f"讀取播放清單 {pkey}")
+        for item in resp.get("items", []):
+            snip = item["snippet"]
+            entries.append((item["id"], snip["resourceId"]["videoId"], snip.get("position")))
+        token = resp.get("nextPageToken")
+        if not token:
+            return entries
+
+
+def swap_playlist_video(youtube, state, state_path, pkey, old_vid, new_vid, required):
+    """把新影片插到舊影片的位置，再移除舊影片的 playlistItem；可重複執行（已做過的步驟會跳過）。"""
+    if required:
+        pid = ensure_playlist(youtube, state, state_path, pkey)
+    else:
+        pid = state["playlists"].get(pkey, {}).get("playlist_id")
+        if not pid:
+            print(f"  略過清單 {pkey}：狀態檔沒有清單 id")
+            return
+    current = list_playlist_entries(youtube, pid, pkey)
+    old_items = [(iid, pos) for iid, vid, pos in current if vid == old_vid]
+    has_new = any(vid == new_vid for _, vid, _ in current)
+    if not old_items and not required and not has_new:
+        print(f"  略過清單 {pkey}：舊影片已不在清單內")
+        return
+    position = old_items[0][1] if old_items else None
+    if not has_new:
+        snippet = {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": new_vid}}
+        if position is not None:
+            snippet["position"] = position
+        try:
+            execute(youtube.playlistItems().insert(part="snippet", body={"snippet": snippet}),
+                    f"新影片加入清單 {pkey}")
+        except UploadError as exc:
+            raise UploadError(f"新影片 {new_vid} 加入清單 {pkey}（位置 {position}）失敗：{exc}") from exc
+        where = f"第 {position + 1} 位" if position is not None else "最後"
+        print(f"  清單 {pkey}：新影片放到{where}")
+    for item_id, _ in old_items:
+        try:
+            execute(youtube.playlistItems().delete(id=item_id), f"舊影片移出清單 {pkey}")
+        except UploadError as exc:
+            raise UploadError(f"舊影片 {old_vid} 移出清單 {pkey} 失敗（新影片已加入，"
+                              f"重跑同一指令會續做）：{exc}") from exc
+        print(f"  清單 {pkey}：舊影片 {old_vid} 已移出（影片本身保留）")
+    state["playlist_items"][pkey] = swap_in_list(
+        state["playlist_items"].get(pkey, []), old_vid, new_vid, position)
+    save_state(state_path, state)
+
+
 # ================================================================ 指令
 
 def process_entry(youtube, state, state_path, entry, uploaded_titles):
@@ -347,6 +484,66 @@ def run_upload(entries, state_path):
         print(f"未完成：{failures}", file=sys.stderr)
         return "PARTIAL"
     return "OK"
+
+
+def replace_entry(youtube, state, state_path, entry):
+    """--replace 單支：上傳（或續跑）→ 確認私人 → 逐清單替換 → 標記完成。"""
+    key = entry["key"]
+    pending = pending_replacement(state, key)
+    if pending:
+        old_vid, new_vid = pending["video_id"], state["videos"][key]["video_id"]
+        print(f"續跑 {key}：新影片 {new_vid} 已上傳，繼續替換舊影片 {old_vid}")
+    else:
+        info = state["videos"].get(key) or {}
+        old_vid = info.get("video_id")
+        if not old_vid:
+            raise UploadError(f"--replace {key}：狀態檔沒有舊影片 id，請改用一般上傳")
+        new_vid = upload_video(youtube, entry)
+        history = list(info.get("replaced") or [])
+        history.append({"video_id": old_vid, "at": datetime.now().isoformat(timespec="seconds"),
+                        "playlists_done": False})
+        # 上傳完立刻存檔：之後任何步驟失敗，重跑都不會再傳一次
+        state["videos"][key] = {"video_id": new_vid, "status": "uploaded", "title": entry["title"],
+                                "at": datetime.now().isoformat(timespec="seconds"),
+                                "replaced": history}
+        save_state(state_path, state)
+        print(f"新影片 {key}：https://youtu.be/{new_vid}（取代 {old_vid}）")
+    verify_private(youtube, new_vid)
+    required = MEMBERSHIP[entry["playlist"]]
+    for pkey in replace_targets(entry, state, old_vid):
+        swap_playlist_video(youtube, state, state_path, pkey, old_vid, new_vid, pkey in required)
+    state["videos"][key]["replaced"][-1]["playlists_done"] = True
+    save_state(state_path, state)
+    print(f"替換完成 {key}：舊影片 {old_vid} 已移出清單（未刪除）")
+
+
+def run_replace(entries, keys, state_path):
+    by_key = {e["key"]: e for e in entries}
+    state = load_state(state_path)
+    plan_replace(entries, state, keys)  # 先離線檢查 key 與舊 id，有問題就在連網前停止
+    youtube = build_service()
+    verify_channel(youtube)
+    failures = []
+    for key in keys:
+        try:
+            replace_entry(youtube, state, state_path, by_key[key])
+        except UploadError as exc:
+            print(f"錯誤：替換 {key} 失敗：{exc}", file=sys.stderr)
+            failures.append(key)
+    save_state(state_path, state)
+    if failures:
+        print(f"未完成替換：{failures}（重跑同一指令會從中斷處續做）", file=sys.stderr)
+        return "PARTIAL"
+    return "OK"
+
+
+def print_replace_dry_run(entries, state, keys):
+    labels = {"replace_upload": "重新上傳（私人）", "replace_resume": "續跑",
+              "verify_private": "確認 privacyStatus=private", "playlist_swap": "清單同位置替換",
+              "playlist_add": "加入清單", "keep_old": "舊影片保留不刪"}
+    for kind, target, detail in plan_replace(entries, state, keys):
+        print(f"[dry-run] {labels[kind]}：{target} → {detail}")
+    print(f"[dry-run] 共 {len(keys)} 支待替換，未連網")
 
 
 def print_dry_run(entries, state):
@@ -421,12 +618,46 @@ def self_test():
             raise AssertionError("缺欄位的 manifest 應該報錯")
         except UploadError:
             pass
+        _test_replace_plan(entries)
         _test_quota_detection()
         print("SELF-TEST PASS")
         return 0
     except (AssertionError, UploadError) as exc:
         print(f"SELF-TEST FAIL：{exc!r}（暫存於 {root}）", file=sys.stderr)
         return 1
+
+
+def _test_replace_plan(entries):
+    """--replace 的離線規劃：位置、續跑、清單替換。"""
+    state = empty_state()
+    state["videos"]["full"] = {"video_id": "OLD_F", "status": "uploaded"}
+    state["videos"]["highlight"] = {"video_id": "OLD_H", "status": "uploaded"}
+    state["playlists"]["drill"] = {"playlist_id": "PL1", "title": PLAYLISTS["drill"]}
+    state["playlists"]["highlight"] = {"playlist_id": "PL2", "title": PLAYLISTS["highlight"]}
+    state["playlist_items"]["drill"] = ["OLD_F", "OLD_H", "X"]
+    state["playlist_items"]["highlight"] = ["OLD_H"]
+    acts = plan_replace(entries, state, ["full", "highlight"])
+    assert ("replace_upload", "full", entries[0]["file"]) in acts, acts
+    assert any(a[0] == "playlist_swap" and a[1] == "highlight" and "drill 第 2 位" in a[2]
+               for a in acts), acts
+    assert any(a[0] == "playlist_swap" and a[1] == "highlight" and a[2].startswith("highlight 第 1 位")
+               for a in acts), acts
+    assert ("keep_old", "full", "OLD_F") in acts
+    assert swap_in_list(["OLD_F", "OLD_H", "X"], "OLD_H", "NEW_H") == ["OLD_F", "NEW_H", "X"]
+    assert swap_in_list(["A"], "OLD", "NEW", 0) == ["NEW", "A"]
+    assert swap_in_list(["NEW", "OLD"], "OLD", "NEW") == ["NEW"]  # 續跑時不重複
+    # 已上傳新影片但清單未換完 → 續跑，不重傳
+    state["videos"]["full"] = {"video_id": "NEW_F", "status": "uploaded",
+                               "replaced": [{"video_id": "OLD_F", "at": "t", "playlists_done": False}]}
+    acts = plan_replace(entries, state, ["full"])
+    assert acts[0][0] == "replace_resume" and not any(a[0] == "replace_upload" for a in acts), acts
+    state["videos"]["full"]["replaced"][-1]["playlists_done"] = True
+    assert pending_replacement(state, "full") is None
+    try:
+        plan_replace(entries, state, ["prompt-01"])
+        raise AssertionError("沒有舊影片 id 的 --replace 應該報錯")
+    except UploadError:
+        pass
 
 
 def _test_quota_detection():
@@ -454,6 +685,8 @@ def parse_args(argv=None):
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST), help="upload_manifest.json 路徑")
     parser.add_argument("--only", help="只處理這個 key")
     parser.add_argument("--dry-run", action="store_true", help="只列出會做什麼，不連網")
+    parser.add_argument("--replace", action="append", metavar="KEY",
+                        help="重傳這支並替換播放清單裡的舊影片（可重複指定）")
     parser.add_argument("--self-test", action="store_true", help="離線驗證 manifest／狀態邏輯")
     return parser.parse_args(argv)
 
@@ -467,6 +700,18 @@ def main():
     manifest_path = Path(args.manifest).expanduser()
     state_path = manifest_path.parent / "yt_state.json"
     try:
+        if args.replace and args.only:
+            raise UploadError("--replace 與 --only 不能同時使用")
+        if args.replace:
+            all_entries = load_manifest(manifest_path)
+            keys = list(dict.fromkeys(args.replace))
+            if args.dry_run:
+                print_replace_dry_run(all_entries, load_state(state_path), keys)
+                result = "OK"
+            else:
+                result = run_replace(all_entries, keys, state_path)
+            print(f"YT_UPLOAD_RESULT={result}")
+            sys.exit(0 if result == "OK" else 2)
         entries = select_entries(load_manifest(manifest_path), args.only)
         if args.command == "status":
             print_status(entries, load_state(state_path))

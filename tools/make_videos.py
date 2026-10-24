@@ -54,10 +54,18 @@ HIGHLIGHT_TAIL_SEC = 1.0
 MIN_CHAPTER_SEC = 10.0
 VOICE_PAD_SEC = 0.8
 
-PIP_W, PIP_H, PIP_X, PIP_Y, PIP_BORDER = 640, 360, 1260, 20, 3
-CLIP_W, CLIP_X = 1300, 610
-# gui 章節：螢幕 3 當主畫面，螢幕 2 縮小疊在主畫面右下角內側
-GUI_PIP_W, GUI_PIP_H, GUI_PIP_BORDER, GUI_PIP_MARGIN = 480, 270, 3, 16
+# 精華版「雙視窗並排」版面：不用任何子畫面，避免小框擋住練習視窗的字。
+# 螢幕 2 實測視窗位置：左「教練」x≈10～948、右「練習」x≈972～1910，工作列 y≥1008，
+# 所以各切 942x1004（左右各多留一點邊緣，底部排除工作列）。格式為 (寬, 高, x, y)。
+COACH_CROP = (942, 1004, 8, 0)
+PRACTICE_CROP = (942, 1004, 970, 0)
+BANNER_H = 120
+WIN_H = 940
+# 等比縮放後的寬度，取偶數（libx264 yuv420p 需要）
+WIN_W = int(round(COACH_CROP[0] * WIN_H / COACH_CROP[1] / 2)) * 2
+WIN_BORDER, WIN_GAP = 2, 24
+WIN_BORDER_COLOR = "0xD0D0D0"
+BANNER_MARGIN = 40
 
 FULL_NAME = "K135-雙視窗演練-完整版"
 HIGHLIGHT_NAME = "K135-雙視窗演練-精華版"
@@ -223,7 +231,10 @@ def recording_from_session(raw_dir, key):
 
 
 def find_recordings(ctx, events):
-    """回傳 {'m2': (路徑, 啟動 epoch), 'm3': (...)}，以 rec_start 事件為準。"""
+    """回傳 {'m2': (路徑, 啟動 epoch), 'm3': (...)}，以 rec_start 事件為準。
+
+    影片只用 m2；m3 可缺，有的話只把啟動時間寫進 composite_offset.json 備查。
+    """
     found = {}
     for stamp, name, content in events:
         if name != "rec_start":
@@ -235,9 +246,8 @@ def find_recordings(ctx, events):
             if not filename:
                 raise VideoError(f"rec_start {parts[0]} 沒有檔名，session.json 也查不到")
             found[parts[0]] = (resolve_recording(ctx.raw_dir, filename), stamp)
-    for key in ("m2", "m3"):
-        if key not in found:
-            raise VideoError(f"events.log 缺少 rec_start {key}")
+    if "m2" not in found:
+        raise VideoError("events.log 缺少 rec_start m2")
     return found
 
 
@@ -327,30 +337,27 @@ def make_title_card(path, subtitle):
     img.save(path)
 
 
-def wrap_by_width(draw, text, font, max_width):
-    lines, cur = [], ""
-    for ch in text:
-        if cur and draw.textlength(cur + ch, font=font) > max_width:
-            lines.append(cur)
-            cur = ch
-        else:
-            cur += ch
-    if cur:
-        lines.append(cur)
-    return lines
+def fit_text(draw, text, font, max_width):
+    """超出寬度就從尾端截掉並補「…」，確保章名不會壓到右側的「精華」。"""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    while text and draw.textlength(text + "…", font=font) > max_width:
+        text = text[:-1]
+    return text + "…"
 
 
-def make_chapter_panel(path, ch):
-    """精華版每章底圖：左側 600px 文字欄，右側留給影片片段。"""
+def make_chapter_banner(path, ch):
+    """精華版每章底圖：上方 120px 橫幅（左白字章名、右橘字「精華」），下方留給雙視窗。"""
     img, draw = new_canvas()
-    draw.text((50, 150), "K135", font=load_font(FONT_REGULAR, 48), fill=ORANGE)
-    draw.text((50, 230), f"第 {int(ch['ch'])} 章", font=load_font(FONT_BOLD, 72), fill=WHITE)
-    name_font = load_font(FONT_REGULAR, 44)
-    y = 350
-    for line in wrap_by_width(draw, ch["name"], name_font, 520):
-        draw.text((50, y), line, font=name_font, fill=WHITE)
-        y += 62
-    draw.text((50, H - 190), "精華", font=load_font(FONT_BOLD, 72), fill=ORANGE)
+    font = load_font(FONT_BOLD, 56)
+    mid_y = BANNER_H / 2
+    tag = "精華"
+    tag_w = draw.textlength(tag, font=font)
+    draw.text((W - BANNER_MARGIN, mid_y), tag, font=font, fill=ORANGE, anchor="rm")
+    title = f"K135　第 {int(ch['ch'])} 章　{ch['name']}"
+    max_w = W - BANNER_MARGIN * 3 - tag_w
+    draw.text((BANNER_MARGIN, mid_y), fit_text(draw, title, font, max_w), font=font,
+              fill=WHITE, anchor="lm")
     img.save(path)
 
 
@@ -368,38 +375,20 @@ def compute_trim(events, m2_start, m2_dur):
     return cut_start, cut_end
 
 
-def composite_filter(m3_delay, has_m3):
-    base = f"[0:v]fps={FPS},scale={W}:{H},setsar=1[base]"
-    if not has_m3:
-        return base + ";[base]format=yuv420p[v]\n"
-    pip = f"[1:v]fps={FPS},scale={PIP_W}:{PIP_H},setsar=1"
-    if m3_delay > 0:
-        # 螢幕 3 晚啟動：前面補黑畫面，讓兩邊時間軸對齊
-        pip += f",tpad=start_duration={m3_delay:.3f}:color=black"
-    pip += (f",pad={PIP_W + 2 * PIP_BORDER}:{PIP_H + 2 * PIP_BORDER}:"
-            f"{PIP_BORDER}:{PIP_BORDER}:color=0xD0D0D0[pip]")
-    overlay = (f"[base][pip]overlay={PIP_X - PIP_BORDER}:{PIP_Y - PIP_BORDER}:"
-               f"eof_action=pass,format=yuv420p[v]")
-    return ";".join([base, pip, overlay]) + "\n"
+def composite_filter():
+    """螢幕 2 本身就是教練＋練習左右並排，直接輸出，不疊任何子畫面。"""
+    return f"[0:v]fps={FPS},scale={W}:{H},setsar=1,format=yuv420p[v]\n"
 
 
 def build_composite(ctx, workdir, recs, cut_start, cut_end):
-    (m2_path, m2_start), (m3_path, m3_start) = recs["m2"], recs["m3"]
+    m2_path, m2_start = recs["m2"]
     dur = cut_end - cut_start
-    ss3 = cut_start - m3_start
-    m3_delay = max(-ss3, 0.0)
-    m3_len = dur - m3_delay
-    has_m3 = m3_len > 0.5
     args = ["-ss", f"{cut_start - m2_start:.3f}", "-t", f"{dur:.3f}", "-i", str(m2_path)]
-    if has_m3:
-        args += ["-ss", f"{max(ss3, 0.0):.3f}", "-t", f"{m3_len:.3f}", "-i", str(m3_path)]
-    else:
-        print("警告：螢幕 3 錄影與裁切範圍沒有重疊，完整版不疊子畫面", file=sys.stderr)
-    script = write_filter(workdir, "composite.txt", composite_filter(m3_delay, has_m3))
+    script = write_filter(workdir, "composite.txt", composite_filter())
     args += ["-/filter_complex", script, "-map", "[v]", "-an", "-t", f"{dur:.3f}",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(FPS),
              "-movflags", "+faststart", "composite.mp4"]
-    print(f"合成雙畫面（{dur:.1f} 秒）…")
+    print(f"裁切螢幕 2 雙視窗畫面（{dur:.1f} 秒）…")
     run_ffmpeg(ctx, args, "合成 composite.mp4", cwd=workdir)
     return Path(workdir) / "composite.mp4"
 
@@ -452,7 +441,7 @@ def cmd_full(ctx):
         "offset_iso": datetime.fromtimestamp(cut_start).astimezone().isoformat(timespec="milliseconds"),
         "duration": cut_end - cut_start,
         "m2_start_epoch": recs["m2"][1],
-        "m3_start_epoch": recs["m3"][1],
+        "m3_start_epoch": recs["m3"][1] if "m3" in recs else None,
     }
     (ctx.out_dir / "composite_offset.json").write_text(
         json.dumps(offset, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -528,42 +517,44 @@ def freeze_tpad(seconds, take):
     return f"tpad=stop_mode=clone:stop_duration={max(seconds - take, 0.0) + 0.5:.3f}"
 
 
-def composite_layout(seconds, sources):
-    """gui=false：右側放 composite。sources=[(路徑, 開始秒, 取用秒)]。"""
-    take = sources[0][2]
-    return (f"[1:v]fps={FPS},scale={CLIP_W}:-2,setsar=1,{freeze_tpad(seconds, take)}[clip];"
-            f"[bg][clip]overlay={CLIP_X}:(main_h-overlay_h)/2,format=yuv420p[v];")
+def window_chain(label, crop, seconds, take, out_label):
+    """切出一個視窗 → 等比縮到高 WIN_H → 加淺灰細框 → 不足長度時凍結補齊。"""
+    crop_w, crop_h, crop_x, crop_y = crop
+    return (f"[{label}]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={WIN_W}:{WIN_H},setsar=1,"
+            f"pad={WIN_W + 2 * WIN_BORDER}:{WIN_H + 2 * WIN_BORDER}:{WIN_BORDER}:{WIN_BORDER}:"
+            f"color={WIN_BORDER_COLOR},{freeze_tpad(seconds, take)}[{out_label}];")
 
 
-def gui_layout(seconds, sources, main_h):
-    """gui=true：螢幕 3 等比縮成寬 1300 當主畫面，螢幕 2 縮成 480x270 加框疊在右下角內側。"""
-    (_, _, take3), (_, _, take2) = sources
-    main_y = (H - main_h) // 2
-    box_w = GUI_PIP_W + 2 * GUI_PIP_BORDER
-    box_h = GUI_PIP_H + 2 * GUI_PIP_BORDER
-    pip_x = CLIP_X + CLIP_W - GUI_PIP_MARGIN - box_w
-    pip_y = main_y + main_h - GUI_PIP_MARGIN - box_h
-    return (f"[1:v]fps={FPS},scale={CLIP_W}:{main_h},setsar=1,{freeze_tpad(seconds, take3)}[main];"
-            f"[2:v]fps={FPS},scale={GUI_PIP_W}:{GUI_PIP_H},setsar=1,{freeze_tpad(seconds, take2)},"
-            f"pad={box_w}:{box_h}:{GUI_PIP_BORDER}:{GUI_PIP_BORDER}:color=0xD0D0D0[pip];"
-            f"[bg][main]overlay={CLIP_X}:{main_y}[tmp];"
-            f"[tmp][pip]overlay={pip_x}:{pip_y},format=yuv420p[v];")
+def dual_window_positions():
+    """回傳 (教練 x, 練習 x, y)：整組水平置中，垂直置中於橫幅下方的剩餘空間。"""
+    box_w = WIN_W + 2 * WIN_BORDER
+    box_h = WIN_H + 2 * WIN_BORDER
+    left_x = (W - (box_w * 2 + WIN_GAP)) // 2
+    top_y = BANNER_H + (H - BANNER_H - box_h) // 2
+    return left_x, left_x + box_w + WIN_GAP, top_y
 
 
-def render_chapter_segment(ctx, workdir, ch, mp3, seconds, sources, out_name, main_h=None):
-    """sources 一個（composite）或兩個（m3 主畫面、m2 子畫面）；main_h 有值代表 gui 版面。"""
-    panel = f"panel_{ch['ch']}.png"
-    make_chapter_panel(Path(workdir) / panel, ch)
-    video_layout = (gui_layout(seconds, sources, main_h) if main_h
-                    else composite_layout(seconds, sources))
-    audio_idx = 1 + len(sources)
+def dual_window_layout(seconds, take):
+    """從 composite（=螢幕 2）切出教練、練習兩個視窗，左右並排一樣大，無子畫面。"""
+    coach_x, practice_x, top_y = dual_window_positions()
+    return (f"[1:v]fps={FPS},scale={W}:{H},setsar=1,split=2[src_coach][src_practice];"
+            + window_chain("src_coach", COACH_CROP, seconds, take, "coach")
+            + window_chain("src_practice", PRACTICE_CROP, seconds, take, "practice")
+            + f"[bg][coach]overlay={coach_x}:{top_y}[tmp];"
+            f"[tmp][practice]overlay={practice_x}:{top_y},format=yuv420p[v];")
+
+
+def render_chapter_segment(ctx, workdir, ch, mp3, seconds, source, out_name):
+    """source=(composite 路徑, 開始秒, 取用秒)；所有章節（含 gui）一律雙視窗並排。"""
+    banner = f"banner_{ch['ch']}.png"
+    make_chapter_banner(Path(workdir) / banner, ch)
+    path, rel_start, take = source
     script = write_filter(workdir, out_name + ".txt", (
-        f"[0:v]scale={W}:{H},setsar=1,fps={FPS}[bg];" + video_layout +
-        f"[{audio_idx}:a]aresample=48000,aformat=channel_layouts=stereo,apad[a]\n"))
-    inputs = ["-loop", "1", "-framerate", str(FPS), "-i", panel]
-    for path, rel_start, take in sources:
-        inputs += ["-ss", f"{rel_start:.3f}", "-t", f"{take:.3f}", "-i", str(path)]
-    run_ffmpeg(ctx, [*inputs, "-i", mp3, "-/filter_complex", script,
+        f"[0:v]scale={W}:{H},setsar=1,fps={FPS}[bg];" + dual_window_layout(seconds, take) +
+        "[2:a]aresample=48000,aformat=channel_layouts=stereo,apad[a]\n"))
+    run_ffmpeg(ctx, ["-loop", "1", "-framerate", str(FPS), "-i", banner,
+                     "-ss", f"{rel_start:.3f}", "-t", f"{take:.3f}", "-i", str(path),
+                     "-i", mp3, "-/filter_complex", script,
                      "-map", "[v]", "-map", "[a]",
                      "-t", f"{seconds:.3f}", *ENCODE_ARGS, out_name],
                f"產生第 {ch['ch']} 章片段", cwd=workdir)
@@ -589,44 +580,14 @@ def load_highlight_inputs(ctx):
     return narration, composite, offset
 
 
-def probe_size(ctx, path):
-    _, ffprobe = tools(ctx)
-    proc = run_cmd([ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
-                    "stream=width,height", "-of", "csv=p=0", str(path)], f"ffprobe {Path(path).name}")
-    try:
-        width, height = (int(v) for v in proc.stdout.strip().split(",")[:2])
-    except ValueError as exc:
-        raise VideoError(f"無法讀取解析度：{path}（ffprobe 輸出：{proc.stdout!r}）") from exc
-    return width, height
-
-
-def load_gui_sources(ctx, events):
-    """gui 章節要用的 m2／m3：{'m2': (路徑, 啟動 epoch, 長度), 'm3': ...} 與主畫面高度。"""
-    recs = find_recordings(ctx, events)
-    info = {key: (path, start, probe_duration(ctx, path)) for key, (path, start) in recs.items()}
-    m3_w, m3_h = probe_size(ctx, info["m3"][0])
-    # 等比縮放到寬 1300，高度取偶數（libx264 yuv420p 需要）
-    main_h = int(round(m3_h * CLIP_W / m3_w / 2)) * 2
-    return info, main_h
-
-
-def chapter_sources(ch, clip, composite, composite_dur, offset_epoch, gui):
-    """依章節是否 gui 決定來源：回傳 (sources, main_h, 說明文字)。"""
+def chapter_source(clip, composite, composite_dur, offset_epoch):
+    """把片段的絕對時間換成 composite.mp4 內的位置：回傳 (source, 說明文字)。"""
     abs_start, abs_end = clip
-    if ch.get("gui") and gui:
-        info, main_h = gui
-        sources = []
-        for key in ("m3", "m2"):
-            path, start, dur = info[key]
-            rel, take = source_window(abs_start, abs_end, start, dur)
-            sources.append((path, rel, take))
-        desc = "；".join(f"{Path(p).name} {r:.1f}s 起 {t:.1f}s" for p, r, t in sources)
-        return sources, main_h, desc
     rel, take = source_window(abs_start, abs_end, offset_epoch, composite_dur)
-    return [(composite, rel, take)], None, f"composite.mp4 {rel:.1f}s 起 {take:.1f}s"
+    return (composite, rel, take), f"composite.mp4 {rel:.1f}s 起 {take:.1f}s"
 
 
-def build_chapter_segments(ctx, workdir, narration, composite, offset, timeline, gui=None):
+def build_chapter_segments(ctx, workdir, narration, composite, offset, timeline):
     """回傳 [(片段檔名, 章標題或 None)]，片頭片尾以 None 表示。"""
     composite_dur = probe_duration(ctx, composite)
     segments = []
@@ -642,11 +603,10 @@ def build_chapter_segments(ctx, workdir, narration, composite, offset, timeline,
         synthesize(ctx, text, mp3, workdir)
         seconds = max(probe_duration(ctx, Path(workdir) / mp3) + VOICE_PAD_SEC, MIN_CHAPTER_SEC)
         clip = plan_clip(timeline[code], int(ch.get("highlight", 1)), seconds)
-        sources, main_h, desc = chapter_sources(ch, clip, composite, composite_dur,
-                                                offset["offset_epoch"], gui)
+        source, desc = chapter_source(clip, composite, composite_dur, offset["offset_epoch"])
         out_name = f"seg_{code}.mp4"
         print(f"第 {code} 章：{seconds:.1f} 秒，取 {desc}")
-        render_chapter_segment(ctx, workdir, ch, mp3, seconds, sources, out_name, main_h)
+        render_chapter_segment(ctx, workdir, ch, mp3, seconds, source, out_name)
         segments.append((out_name, chapter_title(ch)))
     return segments
 
@@ -665,13 +625,11 @@ def cmd_highlight(ctx):
     narration, composite, offset = load_highlight_inputs(ctx)
     events = parse_events(ctx.events_log)
     timeline = build_timeline(events)
-    # 只有存在 gui 章節時才需要原始 m2／m3 錄影
-    gui = load_gui_sources(ctx, events) if any(c.get("gui") for c in load_chapters(ctx)) else None
     with work_dir(ctx) as workdir:
         intro = build_card_segment(ctx, workdir, "intro", narration["intro"],
                                    "雙視窗演練・精華版", INTRO_CARD_SEC)
         chapter_segs = build_chapter_segments(ctx, workdir, narration, composite, offset,
-                                              timeline, gui)
+                                              timeline)
         outro = build_card_segment(ctx, workdir, "outro", narration["outro"],
                                    "完整版與提示詞影片請見播放清單", INTRO_CARD_SEC)
         names = [intro] + [n for n, _ in chapter_segs] + [outro]
@@ -722,8 +680,7 @@ def cmd_prompts(ctx):
 # ================================================================ manifest
 
 INTRO_TEXT = ("《ROS 2 from Scratch》（K135）讀書演練：在 Windows 11 的 WSL2 裝好 ROS 2 Jazzy，"
-              "用雙視窗方式逐章實作——左邊是教練視窗、右邊是練習終端機，"
-              "小烏龜與 RViz 等圖形視窗另外錄製。")
+              "用雙視窗方式逐章實作——左邊是教練視窗、右邊是練習終端機。")
 
 
 def read_chapters_text(path):
@@ -744,13 +701,13 @@ def build_manifest_entries(ctx):
         {"key": "full", "file": str((out / f"{FULL_NAME}.mp4").resolve()),
          "title": "K135 ROS 2 from Scratch｜雙視窗演練 完整版",
          "description": build_description(
-             "這是完整版，從第 1 章到第 13 章不剪接，圖形視窗以子畫面疊在右上角。",
+             "這是完整版，從第 1 章到第 13 章不剪接，畫面為教練與練習兩個視窗並排。",
              read_chapters_text(out / f"{FULL_NAME}-chapters.txt")),
          "playlist": "full"},
         {"key": "highlight", "file": str((out / f"{HIGHLIGHT_NAME}.mp4").resolve()),
          "title": "K135 ROS 2 from Scratch｜雙視窗演練 精華版",
          "description": build_description(
-             "這是精華版，每章挑一段重點畫面配上旁白說明。",
+             "這是精華版，每章挑一段重點畫面配上旁白說明，教練與練習兩個視窗左右並排。",
              read_chapters_text(out / f"{HIGHLIGHT_NAME}-chapters.txt")),
          "playlist": "highlight"},
     ]
@@ -855,6 +812,15 @@ def self_test():
                   tts_silent_fallback=True)
     try:
         assert fmt_ts(0) == "0:00" and fmt_ts(65.9) == "1:05" and fmt_ts(3725) == "1:02:05"
+        # 雙視窗版面：寬 882、整組水平置中、兩框不重疊且都在橫幅下方與畫面內
+        assert WIN_W == 882, WIN_W
+        coach_x, practice_x, top_y = dual_window_positions()
+        box_w, box_h = WIN_W + 2 * WIN_BORDER, WIN_H + 2 * WIN_BORDER
+        assert coach_x + box_w + WIN_GAP == practice_x, (coach_x, practice_x)
+        assert abs(coach_x - (W - practice_x - box_w)) <= 1, (coach_x, practice_x)
+        assert top_y >= BANNER_H and top_y + box_h <= H, top_y
+        layout = dual_window_layout(12.0, 10.0)
+        assert "crop=942:1004:8:0" in layout and "crop=942:1004:970:0" in layout, layout
         make_fake_inputs(ctx, root)
         # 片段取段落最後 N 秒：重送的 enter 取最後一筆（19s），不足時從段落開始（15s）起剪
         timeline = build_timeline(parse_events(ctx.events_log))
