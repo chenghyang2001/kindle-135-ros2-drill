@@ -1,0 +1,13 @@
+.env
+credentials.json
+token.json
+__pycache__/
+.pytest_cache/
+*.stackdump
+core
+*.core
+*.dmp
+*~
+*.swp
+.DS_Store
+Thumbs.db
