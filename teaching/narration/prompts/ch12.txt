@@ -1,0 +1,1 @@
+第十二章，機器人描述套件。慣例是建立 description 套件，裡面放 urdf、rviz 和 launch 三個資料夾，CMakeLists 只負責把它們安裝到 share 目錄。Xacro 的 include 改用 find 套件名稱來找路徑，裝到哪裡都找得到。launch 檔用 Command 執行 xacro，把展開結果交給 robot state publisher，再帶起滑桿和 RViz。指令是 ros2 launch my robot description display launch py。

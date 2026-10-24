@@ -1,0 +1,1 @@
+第四章，寫第一個節點。指令順序是：先建立 ros2 工作區的 src 資料夾，用 colcon build 編一次。再用 ros2 pkg create 分別建立 Python 套件和 C++ 套件。Python 節點的重點是繼承 Node、建立一秒一次的 timer、最後交給 spin。Python 要在 setup 點 py 登記執行檔，C++ 要在 CMakeLists 加 add executable 和 install。編譯後用 ros2 run 執行。最後記住這個寫法：ros args 加上 dash r 底線底線 node 冒號等於新名字，可以在啟動時幫節點改名。

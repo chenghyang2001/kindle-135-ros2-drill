@@ -1,0 +1,1 @@
+第六章，service 請求與回應。先在 srv 檔用三個減號分開請求和回應，例如 ResetCounter。服務端用 create service，收到不合法的請求，像是負數，就回傳 success 等於 false 和原因。客戶端用 create client，先等服務上線，再用 call async 非同步送出，回應到了才處理。命令列可以用 ros2 service call reset counter 直接測。小烏龜控制器呼叫 set pen 換筆色，也提供 activate turtle 服務讓別人叫它停或走。

@@ -1,0 +1,1 @@
+第三章，用小烏龜認識核心概念。先用 ros2 run turtlesim turtlesim node 開出小烏龜。接著 ros2 node list 和 node info，看節點發布和訂閱了哪些東西。topic 的部分用 ros2 topic echo 看位置，再用 ros2 topic pub 對 turtle1 的 cmd vel 發速度，小烏龜就會動。service 用 ros2 service call spawn 生出第二隻小烏龜，再呼叫 clear 清掉軌跡。action 用 ros2 action send goal 讓小烏龜轉到一百八十度。參數用 ros2 param set 改背景顏色。最後用 ros2 launch 一次帶起兩個節點。

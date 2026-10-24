@@ -1,0 +1,1 @@
+第十章，認識 TF。每個機器人部件都有自己的座標系，部件之間用關節連起來。robot state publisher 讀入模型，把座標系發布到 tf 和 tf static。會動的關節需要知道角度，由 joint state publisher gui 的滑桿發布 joint states。RViz 把模型和座標軸畫出來。檢查 TF 用兩個工具：view frames 匯出整棵 TF 樹，tf2 echo 查任兩個座標系的相對位置。

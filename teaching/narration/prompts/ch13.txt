@@ -1,0 +1,1 @@
+第十三章，Gazebo 模擬。每個部件要加上碰撞形狀和慣性，物理引擎才能計算。再加兩個 Gazebo 外掛：差速驅動收到速度指令就轉輪子並算出里程計，關節狀態外掛回報輪子角度。ros gz bridge 把 cmd vel 從 ROS 送到 Gazebo，把 joint states 和 tf 送回 ROS。用 ros2 launch my robot bringup my robot launch xml 啟動，再用 ros2 topic pub cmd vel 或鍵盤遙控 teleop twist keyboard 開車。

@@ -1,0 +1,1 @@
+第一章，ROS 2 是什麼。教練給練習視窗的任務很簡單：一段一段看懂觀念。第一個指令是 printenv 加上 grep ROS 底線，看出 ROS 2 只是 source 之後疊在 Ubuntu 上的一層環境變數。第二個是 ros2 doctor 的報告，確認版本是 Jazzy，而且是長期支援版。第三個是同時啟動 C++ 的 talker 和 Python 的 listener，不開任何中央主機，兩個節點也能互傳訊息。最後故意關掉 listener，看 talker 照常發送，說明為什麼要把功能拆成多個節點。

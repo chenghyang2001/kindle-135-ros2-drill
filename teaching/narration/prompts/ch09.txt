@@ -1,0 +1,1 @@
+第九章，launch 檔。慣例是另外建一個 bringup 套件，只放 launch 和 config。Python 寫法裡，每個節點用 Node 描述：package、executable、namespace、name、remappings 和 parameters。XML 寫法比較短、好讀，效果一樣。最後的 turtlesim control 用 namespace t1 和 t2 把兩組小烏龜分開，各自讀取 YAML 裡自己的參數，一個指令帶起四個節點。

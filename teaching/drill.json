@@ -1,0 +1,178 @@
+{
+  "book": "K135",
+  "title": "ROS 2 from Scratch",
+  "practice_cmd": "PYTHONUTF8=1 python tools/drill_ctl.py",
+  "note": "練習視窗是 WSL 的 ~/ros2-demo/chNN.sh 導覽腳本（2026-10-24 已產生並測過，不重新產生）；以 DEMO_RECORD=1 啟動（第 13 章鍵盤遙控改自動駕駛）。圖形視窗開在螢幕 3。",
+  "chapters": [
+    {
+      "ch": "01",
+      "name": "ROS 2 是什麼",
+      "sections": 5,
+      "gui": false,
+      "highlight": 4,
+      "keys": [
+        "ROS 2 是疊在 Linux 上的框架，不是作業系統",
+        "printenv | grep ROS_",
+        "ros2 doctor --report",
+        "C++ talker ＋ Python listener，不需要中央主機"
+      ]
+    },
+    {
+      "ch": "03",
+      "name": "核心概念：turtlesim",
+      "sections": 7,
+      "gui": true,
+      "highlight": 2,
+      "keys": [
+        "ros2 run turtlesim turtlesim_node",
+        "ros2 node list／info",
+        "ros2 topic list／echo／pub",
+        "ros2 service call /spawn",
+        "ros2 action send_goal",
+        "ros2 param set",
+        "ros2 launch"
+      ]
+    },
+    {
+      "ch": "04",
+      "name": "第一個節點",
+      "sections": 6,
+      "gui": false,
+      "highlight": 6,
+      "keys": [
+        "mkdir -p ~/ros2_ws/src ＋ colcon build",
+        "ros2 pkg create --build-type ament_python／ament_cmake",
+        "Node 類別 ＋ create_timer ＋ spin",
+        "setup.py console_scripts／CMakeLists add_executable",
+        "--ros-args -r __node:=新名字"
+      ]
+    },
+    {
+      "ch": "05",
+      "name": "Topic：發布與訂閱",
+      "sections": 6,
+      "gui": false,
+      "highlight": 6,
+      "keys": [
+        "create_publisher(Int64, \"number\", 10)",
+        "create_subscription(..., callback, 10)",
+        "C++ 發、Python 收",
+        "-r number:=my_number",
+        "自訂 HardwareStatus.msg",
+        "turtle_controller 閉迴路控制"
+      ],
+      "note": "錄影時第 5 章 turtlesim 視窗未繪出（全黑），精華版改用螢幕 2 版面"
+    },
+    {
+      "ch": "06",
+      "name": "Service：請求與回應",
+      "sections": 5,
+      "gui": true,
+      "highlight": 5,
+      "keys": [
+        ".srv 用 --- 分請求與回應",
+        "create_service ＋ 拒絕不合法請求",
+        "create_client ＋ call_async",
+        "ros2 service call /reset_counter",
+        "set_pen 換筆色 ＋ /activate_turtle 啟停"
+      ]
+    },
+    {
+      "ch": "07",
+      "name": "Action：長任務與回報",
+      "sections": 5,
+      "gui": false,
+      "highlight": 2,
+      "keys": [
+        ".action 三段：Goal／Result／Feedback",
+        "goal／cancel／execute 三個 callback",
+        "send_goal_async ＋ feedback_callback",
+        "ros2 action send_goal --feedback",
+        "底層是 3 個 service ＋ 2 個 topic"
+      ]
+    },
+    {
+      "ch": "08",
+      "name": "Parameter：節點設定值",
+      "sections": 5,
+      "gui": true,
+      "highlight": 5,
+      "keys": [
+        "declare_parameter(名稱, 預設值)",
+        "--ros-args -p number:=5",
+        "ros2 param set ＋ post_set callback",
+        "--params-file YAML",
+        "ros2 param dump"
+      ]
+    },
+    {
+      "ch": "09",
+      "name": "Launch 檔",
+      "sections": 5,
+      "gui": true,
+      "highlight": 4,
+      "keys": [
+        "my_robot_bringup 套件放 launch＋config",
+        "Node(package, executable, namespace, name, remappings, parameters)",
+        "Python 與 XML 兩種寫法",
+        "namespace /t1、/t2 同時跑兩組小烏龜"
+      ]
+    },
+    {
+      "ch": "10",
+      "name": "認識 TF",
+      "sections": 5,
+      "gui": true,
+      "highlight": 3,
+      "keys": [
+        "每個 link 一個座標系",
+        "robot_state_publisher → /tf",
+        "joint_state_publisher_gui 滑桿",
+        "RViz 看模型與座標軸",
+        "view_frames ＋ tf2_echo"
+      ]
+    },
+    {
+      "ch": "11",
+      "name": "URDF 與 Xacro",
+      "sections": 5,
+      "gui": true,
+      "highlight": 4,
+      "keys": [
+        "link：visual geometry／origin／material",
+        "joint：parent／child／origin／axis",
+        "check_urdf",
+        "xacro:property ＋ xacro:macro",
+        "改 base_length 車身自動變長"
+      ]
+    },
+    {
+      "ch": "12",
+      "name": "機器人描述套件",
+      "sections": 5,
+      "gui": true,
+      "highlight": 4,
+      "keys": [
+        "my_robot_description：urdf／rviz／launch",
+        "$(find my_robot_description)",
+        "Command(['xacro ', 路徑]) 產生 robot_description",
+        "ros2 launch my_robot_description display.launch.py"
+      ]
+    },
+    {
+      "ch": "13",
+      "name": "Gazebo 模擬",
+      "sections": 6,
+      "gui": true,
+      "highlight": 5,
+      "keys": [
+        "collision ＋ inertia",
+        "DiffDrive ＋ JointStatePublisher 外掛",
+        "ros_gz_bridge：/cmd_vel、/joint_states、/tf",
+        "ros2 launch my_robot_bringup my_robot.launch.xml",
+        "ros2 topic pub /cmd_vel 開車",
+        "teleop_twist_keyboard"
+      ]
+    }
+  ]
+}

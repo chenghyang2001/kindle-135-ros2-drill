@@ -76,7 +76,24 @@ note "位置變了 —— 這是 Gazebo 物理引擎算出來的，經過橋接�
 next
 
 title "(6/6) 換你開：鍵盤遙控"
-if [ -n "$DEMO_AUTO" ]; then
+if [ -n "$DEMO_RECORD" ]; then
+  # 錄影時沒人在鍵盤前，teleop 會卡住等按鍵；改用 topic pub 模擬同樣的 cmd_vel
+  note "（錄影模式：自動模擬鍵盤遙控，依序 前進→左轉→前進→右轉→停止）"
+  note "按鍵：i 前進｜, 後退｜j 左轉｜l 右轉｜k 停止｜q/z 加速/減速"
+  TW=geometry_msgs/msg/Twist
+  echo -e "${Y}⌨️  按 i 前進（3 秒）${N}"
+  run "timeout 3 ros2 topic pub -r 10 /cmd_vel $TW \"{linear: {x: 0.5}}\" > /dev/null"
+  echo -e "${Y}⌨️  按 j 原地左轉（3 秒）${N}"
+  run "timeout 3 ros2 topic pub -r 10 /cmd_vel $TW \"{angular: {z: 1.0}}\" > /dev/null"
+  echo -e "${Y}⌨️  按 i 前進（3 秒）${N}"
+  run "timeout 3 ros2 topic pub -r 10 /cmd_vel $TW \"{linear: {x: 0.5}}\" > /dev/null"
+  echo -e "${Y}⌨️  按 l 原地右轉（3 秒）${N}"
+  run "timeout 3 ros2 topic pub -r 10 /cmd_vel $TW \"{angular: {z: -1.0}}\" > /dev/null"
+  echo -e "${Y}⌨️  按 k 停止${N}"
+  run "ros2 topic pub --once /cmd_vel $TW \"{linear: {x: 0.0}, angular: {z: 0.0}}\" > /dev/null"
+  note "開完一圈，看看車子現在的位置："
+  run "timeout 4 ros2 run tf2_ros tf2_echo odom base_footprint 2>/dev/null | grep -m1 -A1 Translation"
+elif [ -n "$DEMO_AUTO" ]; then
   note "（自動測試模式，略過鍵盤遙控）"
 else
   note "按鍵：i 前進｜, 後退｜j 左轉｜l 右轉｜k 停止｜q/z 加速/減速"

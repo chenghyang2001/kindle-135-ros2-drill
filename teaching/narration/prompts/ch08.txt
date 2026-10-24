@@ -1,0 +1,1 @@
+第八章，參數。在節點裡用 declare parameter 宣告名稱和預設值，才能從外部設定。啟動時用 ros args 加上 dash p number 冒號等於五，直接給值。執行中用 ros2 param set 修改，程式要有 post set parameters callback 才會立刻生效。參數多的時候寫成 YAML 檔，用 dash dash params file 一次載入，一個檔可以設定好幾個節點。最後用 ros2 param dump 把目前的參數匯出成 YAML。

@@ -14,6 +14,19 @@
 | 換一台電腦跑 | [NEW-PC-CHECKLIST.md](NEW-PC-CHECKLIST.md) |
 | 之後要做的事 | [TODO.md](TODO.md) |
 
+## YouTube 影片（私人，需登入 ChengHsien Yang 帳號觀看）
+
+2026-10-24 用「教練＋練習」雙視窗錄製第 1～13 章，共 14 支：
+
+| 播放清單 | 內容 |
+| --- | --- |
+| [雙視窗演練](https://www.youtube.com/playlist?list=PLWSfrpTQNwPE) | 完整版 57 分鐘（[單支](https://youtu.be/3fuZbhznKhU)，含章節時間軸）＋精華版 |
+| [精華版](https://www.youtube.com/playlist?list=PLSJQ4ncKDE2U) | 3 分 20 秒，每章約 15 秒＋中文語音解說（[單支](https://youtu.be/YUw1yf7X4Po)） |
+| [提示詞與指令](https://www.youtube.com/playlist?list=PLR1CQ60VN9do) | 12 支，每章的教練提示與關鍵 ROS 2 指令，語音＋同步字幕 |
+
+製作流程（可重跑）：`teaching/DRILL-PROMPT.md`（教練開場提示詞）→ `tools/drill_ctl.py`（教練操作練習視窗）＋ `tools/record_m23.py`（分錄螢幕 2、3）→ `tools/make_videos.py all`（完整版／精華版／提示詞）→ `tools/yt_upload_k135.py`（私人上傳＋播放清單）。旁白稿在 `teaching/narration/`。
+已知瑕疵：第 5 章 turtlesim 視窗錄影時未繪出（全黑），精華版該章改用終端機畫面。
+
 ## 目錄結構
 
 ```text

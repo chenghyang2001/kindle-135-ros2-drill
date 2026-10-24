@@ -1,0 +1,1 @@
+第七章，action 長任務與回報。action 檔用兩條三個減號分成三段：目標、結果和過程回報。範例是 CountUntil，數到指定數字，每數一次回報一次。伺服器有三個 callback：goal callback 決定收不收、cancel callback 決定准不准取消、execute callback 真正去做。客戶端用 send goal async，並掛上 feedback callback 收進度。命令列用 ros2 action send goal 加上 dash dash feedback 就能看到過程。底層其實是三個 service 加兩個 topic。

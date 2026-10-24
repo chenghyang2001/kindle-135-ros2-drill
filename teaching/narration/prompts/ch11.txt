@@ -1,0 +1,1 @@
+第十一章，URDF 與 Xacro。link 描述部件，visual 裡放形狀、位置和顏色。joint 連接 parent 和 child，origin 是相對位置，axis 是轉軸，type 決定怎麼動。寫完先用 check urdf 檢查格式。Xacro 用 property 定義尺寸、用 macro 定義一次輪子再呼叫兩次、用 include 拆檔。改一個 base length 的數字，車身和輪子位置就全部自動重算。

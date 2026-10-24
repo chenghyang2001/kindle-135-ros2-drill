@@ -1,0 +1,1 @@
+第五章，topic 發布與訂閱。發布端用 create publisher，指定訊息型別 Int64、topic 名稱 number、佇列長度十。訂閱端用 create subscription，收到資料就呼叫 callback 累加。C++ 發、Python 收，結果完全一樣。啟動時用 dash r number 冒號等於 my number，就能改 topic 名稱。需要自己的資料格式時，在 interfaces 套件寫 msg 檔，例如 HardwareStatus。最後的 turtle controller 同時訂閱 pose、發布 cmd vel，做出閉迴路控制。
