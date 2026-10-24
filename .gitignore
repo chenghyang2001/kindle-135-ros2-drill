@@ -11,3 +11,6 @@ core
 *.swp
 .DS_Store
 Thumbs.db
+
+# Claude Code hook 自動產生的狀態快照
+.claude/session-state.md
