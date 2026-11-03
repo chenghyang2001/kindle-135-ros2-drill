@@ -30,6 +30,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DRILL_DIR = REPO_ROOT / "drill"
+TOOLS_DIR = REPO_ROOT / "tools"
 DEFAULT_DEST = Path.home() / "ros2-demo"
 LAYOUT_MARKER = ".layout"
 
@@ -48,7 +49,15 @@ _RVIZ_CH12_13 = [
 REQUIRED_REPLACEMENTS = {
     "m3": {},
     "m2right": {
-        "gui-env.sh": [("500x500+720+100", "500x500+3180+100")],
+        # 替換依序套用（apply_replacements 逐條 text.replace），第二條的舊字串是第一條改完的結果
+        "gui-env.sh": [
+            ("500x500+720+100", "500x500+3180+100"),
+            ('TURTLE_GEOM="-qwindowgeometry 500x500+3180+100"',
+             'TURTLE_GEOM="-qwindowgeometry 500x500+3180+100"'
+             "\n# 兩螢幕版面（apply-layout 加）：WSLg 不理視窗座標，背景把圖形視窗搬到螢幕 2 右半；"
+             "章節腳本結束就自動停止\n"
+             "nohup bash ~/ros2-demo/x11-placer.sh $$ > /tmp/x11-placer.log 2>&1 &"),
+        ],
         "jsp_gui_m3.py": [("300x540+880+60", "500x320+2916+640")],
         "urdf_m3.rviz": [
             ("  Height: 600", "  Height: 560"),
@@ -82,6 +91,12 @@ OPTIONAL_REPLACEMENTS = {
         ("（X 0～1280）", "（X 2880～3840）"),
         ("螢幕 3", "螢幕 2 右半"),
     ],
+}
+
+# 版面 → 額外從 tools/ 複製到目的資料夾根目錄的檔案（gui-env.sh 會在背景呼叫）
+EXTRA_TOOL_FILES = {
+    "m3": [],
+    "m2right": ["x11-placer.sh"],
 }
 
 # 執行完要提示使用者的 rqt_graph 設定指令
@@ -168,26 +183,52 @@ def process_file(src: Path, dest_root: Path, layout: str, dry_run: bool) -> tupl
     return rel_name, required_count, optional_count
 
 
+def check_extra_tools_exist(layout: str) -> None:
+    """先確認額外工具檔都在，缺檔就在複製任何東西之前報錯。"""
+    missing = [name for name in EXTRA_TOOL_FILES[layout] if not (TOOLS_DIR / name).is_file()]
+    if missing:
+        raise LayoutError(f"tools/ 中找不到版面需要的檔案：{', '.join(missing)}")
+
+
+def copy_extra_tools(dest_root: Path, layout: str, dry_run: bool) -> list:
+    """複製版面需要的 tools/ 檔案到目的資料夾根目錄並加執行權限，回傳檔名清單。"""
+    names = list(EXTRA_TOOL_FILES[layout])
+    if dry_run:
+        return names
+    dest_root.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        target = dest_root / name
+        shutil.copy2(TOOLS_DIR / name, target)
+        target.chmod(target.stat().st_mode | 0o755)
+    return names
+
+
 def write_layout_marker(dest_root: Path, layout: str) -> None:
     stamp = datetime.now().astimezone().isoformat(timespec="seconds")
     (dest_root / LAYOUT_MARKER).write_text(f"layout={layout}\napplied_at={stamp}\n",
                                            encoding="utf-8")
 
 
-def print_report(results: list, layout: str, dest_root: Path, dry_run: bool) -> None:
+def print_report(results: list, extra_tools: list, layout: str, dest_root: Path,
+                 dry_run: bool) -> None:
     prefix = "【乾跑】" if dry_run else ""
+    verb = "會複製" if dry_run else "已複製"
     print(f"{prefix}版面：{layout}　來源：{DRILL_DIR}　目的：{dest_root}")
     for rel_name, required_count, optional_count in results:
         if required_count or optional_count:
             print(f"  {rel_name}：必要替換 {required_count} 處、說明文字替換 {optional_count} 處")
         else:
             print(f"  {rel_name}：原樣複製")
-    verb = "會複製" if dry_run else "已複製"
-    print(f"{prefix}{verb} {len(results)} 個檔案。")
+    for name in extra_tools:
+        print(f"  tools/{name}：{verb}到 {dest_root / name}（加執行權限）")
+    print(f"{prefix}{verb} {len(results) + len(extra_tools)} 個檔案。")
     print("下一步：")
     print(f"  1. rqt_graph 視窗位置（WSL 內）：{RQT_HINT[layout]}")
     print("  2. 導覽終端機請在 Windows 端開：PYTHONUTF8=1 python tools/open_chapter.py NN "
           f"--layout {layout}")
+    if layout == "m2right":
+        print("  3. 章節腳本 source gui-env.sh 時會在背景啟動 x11-placer 自動把圖形視窗搬到"
+              "螢幕 2 右半，log 在 /tmp/x11-placer.log")
 
 
 def main() -> None:
@@ -197,10 +238,12 @@ def main() -> None:
         sources = list_source_files()
         check_table_targets_exist({p.relative_to(DRILL_DIR).as_posix() for p in sources},
                                   args.layout)
+        check_extra_tools_exist(args.layout)
         # 先在記憶體做完所有替換檢查，任何一條失敗都不會留下半套複製檔
         for src in sources:
             process_file(src, dest_root, args.layout, dry_run=True)
         results = [process_file(src, dest_root, args.layout, args.dry_run) for src in sources]
+        extra_tools = copy_extra_tools(dest_root, args.layout, args.dry_run)
         if not args.dry_run:
             write_layout_marker(dest_root, args.layout)
     except LayoutError as exc:
@@ -209,7 +252,7 @@ def main() -> None:
     except (OSError, UnicodeDecodeError) as exc:
         print(f"錯誤：讀寫檔案失敗：{exc}", file=sys.stderr)
         sys.exit(1)
-    print_report(results, args.layout, dest_root, args.dry_run)
+    print_report(results, extra_tools, args.layout, dest_root, args.dry_run)
 
 
 if __name__ == "__main__":
