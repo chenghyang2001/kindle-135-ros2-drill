@@ -14,6 +14,14 @@
     只套在 WSL 的 ~/ros2-demo 複製檔，本工具只負責終端機視窗的位置。
 螢幕 1 絕對不放演練視窗（錄影只錄螢幕 2）。
 
+為什麼開章前要重啟 ros2 daemon：
+    實測這台 WSL（Ubuntu-24.04，networkingMode=mirrored）上，若 ros2 daemon 是被
+    `ros2 node list` 等指令「自動啟動」的，會卡死（連 127.0.0.1:11511 的 XML-RPC
+    timeout，指令永遠不回），章節腳本就停在 `ros2 node list`。
+    但先殺掉舊 daemon、再手動 `ros2 daemon start`，之後所有 ros2 指令 1 秒內就回應，
+    而且 daemon 在 wsl.exe 結束後仍存活。所以開 wt.exe 之前先做一次手動重啟；
+    失敗只警告不中止。可用 --no-daemon-restart 跳過。
+
 依賴：pywin32（python -m pip install pywin32）、Windows Terminal（wt.exe）、WSL Ubuntu-24.04
 """
 import argparse
@@ -41,6 +49,10 @@ TITLE_PREFIX = "K135 演練-"
 WSL_DISTRO = "Ubuntu-24.04"
 VALID_CHAPTERS = {"01"} | {f"{n:02d}" for n in range(3, 14)}
 OPEN_TIMEOUT_SEC = 20
+DAEMON_RESTART_TIMEOUT_SEC = 60
+# pattern 用 [_] 是為了讓 pkill 不會比對到 bash -c 自己這條指令列
+DAEMON_RESTART_SCRIPT = ("pkill -f '[_]ros2_daemon'; sleep 1; "
+                         "source /opt/ros/jazzy/setup.bash && ros2 daemon start")
 
 # 螢幕 2 工作區是 x 1920~3840、高 1008（扣工作列）
 LAYOUT_RECTS = {
@@ -102,6 +114,37 @@ def move_window(hwnd: int, rect: tuple) -> None:
     win32gui.MoveWindow(hwnd, x, y, w, h, True)
 
 
+def _summarize_output(text, limit: int = 300) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) > limit:
+        cleaned = cleaned[-limit:]  # 錯誤訊息通常在尾端
+    return cleaned or "（無）"
+
+
+def prepare_ros2_daemon() -> bool:
+    """手動重啟 WSL 內的 ros2 daemon；失敗只印警告，回傳是否成功。"""
+    cmd = ["wsl.exe", "-d", WSL_DISTRO, "--", "bash", "-c", DAEMON_RESTART_SCRIPT]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace",
+                                   timeout=DAEMON_RESTART_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired as exc:
+        print(f"警告：重啟 ros2 daemon 超過 {DAEMON_RESTART_TIMEOUT_SEC} 秒未完成，繼續開章"
+              f"（stdout：{_summarize_output(exc.stdout if isinstance(exc.stdout, str) else None)}；"
+              f"stderr：{_summarize_output(exc.stderr if isinstance(exc.stderr, str) else None)}）",
+              file=sys.stderr)
+        return False
+    except FileNotFoundError as exc:
+        print(f"警告：找不到 wsl.exe，無法重啟 ros2 daemon，繼續開章：{exc}", file=sys.stderr)
+        return False
+    if completed.returncode != 0:
+        print(f"警告：重啟 ros2 daemon 失敗（returncode={completed.returncode}），繼續開章"
+              f"（stdout：{_summarize_output(completed.stdout)}；"
+              f"stderr：{_summarize_output(completed.stderr)}）", file=sys.stderr)
+        return False
+    print("✅ ros2 daemon 已重新啟動")
+    return True
+
+
 def launch_terminal(chapter: str, title: str) -> None:
     wt_path = shutil.which("wt.exe") or shutil.which("wt")
     if wt_path is None:
@@ -130,6 +173,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("chapter", help="章號：01、03～13（1 會自動補成 01）")
     parser.add_argument("--layout", choices=sorted(LAYOUT_RECTS), default="m2right",
                         help="版面（預設 m2right）")
+    parser.add_argument("--no-daemon-restart", action="store_true",
+                        help="開章前不重啟 WSL 內的 ros2 daemon")
     return parser
 
 
@@ -148,6 +193,8 @@ def main() -> int:
         if closed:
             print(f"已關閉 {closed} 個舊演練視窗")
             time.sleep(1)  # 等舊視窗真的消失，避免等候時抓到同標題的舊視窗
+        if not args.no_daemon_restart:
+            prepare_ros2_daemon()
         launch_terminal(chapter, title)
     except OpenError as exc:
         print(f"錯誤：{exc}", file=sys.stderr)

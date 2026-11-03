@@ -58,7 +58,7 @@ REQUIRED_REPLACEMENTS = {
              "章節腳本結束就自動停止\n"
              "nohup bash ~/ros2-demo/x11-placer.sh $$ > /tmp/x11-placer.log 2>&1 &"),
         ],
-        "jsp_gui_m3.py": [("300x540+880+60", "500x320+2916+640")],
+        "jsp_gui_m3.py": [("300x540+880+60", "440x320+2916+300")],  # 滑桿最小高約 700，疊在 RViz 左側面板上才不會被工作列擋住
         "urdf_m3.rviz": [
             ("  Height: 600", "  Height: 560"),
             ("  Width: 880", "  Width: 860"),

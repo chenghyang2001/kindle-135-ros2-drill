@@ -3,6 +3,37 @@
 適用：HP EliteBook 840 G8（DESKTOP-6LST1BR），WSL 的 `Ubuntu-24.04` 已裝好 ROS 2 Jazzy（2026-10-24 完成）。
 所有腳本都已產生並測過，**不需要再請 Claude 重新產生**，照下面做即可。
 
+## 目前用法：兩螢幕版（2026-11-03 起）
+
+這台現在是兩個 1920x1080 螢幕：`[ 主螢幕 1 ][ 螢幕 2 ]`。演練視窗全放螢幕 2：**左半導覽終端機、右半圖形視窗**，主螢幕 1 不放。
+
+```bash
+# WSL Ubuntu 內（在 repo 目錄）：複製腳本並套用兩螢幕座標
+python3 tools/apply-layout.py                     # 預設 --layout m2right；改回三螢幕用 --layout m3
+source /opt/ros/jazzy/setup.bash
+python3 tools/set-rqt-geometry.py --x 2916 --y 40 --w 860 --h 600
+```
+
+```bash
+# Windows（Git Bash）：逐章開，NN = 01、03～13
+PYTHONUTF8=1 python tools/open_chapter.py 01
+```
+
+`open_chapter.py` 會先關掉上一章的演練視窗、重啟 ros2 daemon，再把終端機放到螢幕 2 左半。
+
+這台實測到的兩個問題已自動處理：
+
+| 問題 | 處理 |
+| --- | --- |
+| WSLg 不理 `-qwindowgeometry` 的位置，圖形視窗一律開在主螢幕左上角 | 章節腳本 source `gui-env.sh` 時，背景啟動 `x11-placer.sh`，用 xdotool 把視窗搬到螢幕 2 右半（log：`/tmp/x11-placer.log`） |
+| 由 `ros2 node list` 自動啟動的 ros2 daemon 會卡死，腳本停在 `ros2 node list` | 開章前先 `pkill` 舊 daemon、再手動 `ros2 daemon start`；手動用 `ros2 daemon stop; ros2 daemon start` 也能救 |
+
+- `~/ros2_ws` 目前不存在，**第 5 章以後依賴第 4 章建立的工作區，第一次請從第 4 章依序跑**。
+- 第 10～12 章的關節滑桿視窗最小高度約 700，會疊在 RViz 左側面板上（3D 畫面不擋）。
+- 已實測第 3 章（小烏龜、rqt_graph）與第 10 章（RViz、滑桿）；其他章用同一套機制，尚未逐章實測。
+
+以下是原本「3 | 1 | 2」三螢幕版的步驟。
+
 ## 1. 確認環境還在
 
 在 Windows Terminal：

@@ -142,7 +142,7 @@ run_round() {
   handled_ids=()
   place_turtles
   place_by_pattern "RViz" 2916 20
-  place_by_pattern "Joint State Publisher" 2916 640
+  place_by_pattern "Joint State Publisher" 2916 300
   place_by_pattern "rqt" 2916 40
 }
 
