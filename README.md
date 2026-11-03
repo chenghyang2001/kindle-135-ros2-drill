@@ -22,7 +22,7 @@
 | 播放清單 | 內容 |
 | --- | --- |
 | [雙視窗演練](https://www.youtube.com/playlist?list=PLWSfrpTQNwPE) | 完整版 57 分鐘（[單支](https://youtu.be/3fuZbhznKhU)，含章節時間軸）＋精華版 |
-| [精華版](https://www.youtube.com/playlist?list=PLSJQ4ncKDE2U) | 3 分 20 秒，每章約 15 秒＋中文語音解說（[單支](https://youtu.be/YUw1yf7X4Po)） |
+| [精華版](https://www.youtube.com/playlist?list=PLSJQ4ncKDE2U) | 3 分 36 秒，每章約 15 秒＋中文語音解說（[單支，公開](https://youtu.be/H2eM8dY_mU4)；2026-11-03 起公開，舊版 YUw1yf7X4Po 已被取代） |
 | [提示詞與指令](https://www.youtube.com/playlist?list=PLR1CQ60VN9do) | 12 支，每章的教練提示與關鍵 ROS 2 指令，語音＋同步字幕 |
 
 製作流程（可重跑）：`teaching/DRILL-PROMPT.md`（教練開場提示詞）→ `tools/drill_ctl.py`（教練操作練習視窗）＋ `tools/record_m23.py`（分錄螢幕 2、3）→ `tools/make_videos.py all`（完整版／精華版／提示詞）→ `tools/yt_upload_k135.py`（私人上傳＋播放清單）。旁白稿在 `teaching/narration/`。
