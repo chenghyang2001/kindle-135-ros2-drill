@@ -10,6 +10,7 @@
 
 | 情況 | 看哪份文件 |
 | --- | --- |
+| **接續上次進度（兩螢幕版，2026-11-03）** | [HANDOFF.md](HANDOFF.md) |
 | 在同一台電腦重跑 | [RERUN-SAME-PC.md](RERUN-SAME-PC.md) |
 | 換一台電腦跑 | [NEW-PC-CHECKLIST.md](NEW-PC-CHECKLIST.md) |
 | 之後要做的事 | [TODO.md](TODO.md) |

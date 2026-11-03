@@ -41,6 +41,15 @@ Kindle 135《ROS 2 from Scratch》（Packt）逐章演練包：在 **Windows 11 
 - 座標散在多個檔案，換排列時要一起改，清單見 `NEW-PC-CHECKLIST.md` 第 4 節。外框換算：Windows left ≈ -1280 + X - 32、寬 ≈ W + 76，螢幕 3 內需 X + W ≤ 1226。
 - 改書本 launch／rviz 設定時只改**工作區複製檔**並標「本演練加」，書本 repo 原檔不動。
 
+## 兩螢幕版（2026-11-03 起，目前這台的配置）
+
+進度與操作見 `HANDOFF.md`。重點：
+
+- `tools/apply-layout.py`（WSL）複製 `drill/` 到 `~/ros2-demo` 並以字面替換表套用座標（`m2right`：圖形視窗放螢幕 2 右半 X 2880～3840；`m3`：原版）。改 `drill/` 的座標字串時要同步更新替換表，否則它會報錯。
+- 這台 WSLg 不理 `-qwindowgeometry` 位置，靠 `tools/x11-placer.sh`（由 `gui-env.sh` 背景啟動）用 xdotool 搬視窗。
+- 自動啟動的 ros2 daemon 會卡死，`tools/open_chapter.py`（Windows）開章前先手動重啟 daemon。
+- `drill_ctl.py` 的錄影雙視窗版面仍是三螢幕設計，兩螢幕下會與圖形視窗重疊。
+
 ## 錄影與影片管線（Windows 端）
 
 產物都在 `~/Videos/kindle-drill/k135/`（`events.log`、`raw/`、`out/`），不在 repo 內。
