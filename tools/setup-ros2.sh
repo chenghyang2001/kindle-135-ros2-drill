@@ -59,7 +59,8 @@ preflight() {
   codename=$(. /etc/os-release && echo "${VERSION_CODENAME:-}")
   [[ "$codename" == "noble" ]] || echo -e "${Y}⚠️  目前是 ${codename:-未知}，ROS 2 Jazzy 官方只支援 Ubuntu 24.04（noble）${N}"
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    sudo -v || die "取得 sudo 權限失敗"
+    # 免密碼 sudo 時 sudo -v 仍可能要求密碼（verifypw 預設），背景執行會卡住，所以先試 -n
+    sudo -n true 2>/dev/null || sudo -v || die "取得 sudo 權限失敗"
   fi
 }
 
