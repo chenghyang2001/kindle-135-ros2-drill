@@ -55,6 +55,15 @@ REQUIRED_REPLACEMENTS = {
             ("  Width: 880", "  Width: 860"),
             ("  X: 40", "  X: 2916"),
         ],
+        # ch03／ch05 原版沒載 gui-env.sh，三螢幕時靠 window-guardian 把視窗趕到螢幕 3；兩螢幕要補上
+        "ch03.sh": [
+            ("export GALLIUM_DRIVER=d3d12\n", "export GALLIUM_DRIVER=d3d12\nsource ~/ros2-demo/gui-env.sh\n"),
+            ("ros2 run turtlesim turtlesim_node >", "ros2 run turtlesim turtlesim_node $TURTLE_GEOM >"),
+        ],
+        "ch05.sh": [
+            ("export GALLIUM_DRIVER=d3d12\n", "export GALLIUM_DRIVER=d3d12\nsource ~/ros2-demo/gui-env.sh\n"),
+            ('bg "ros2 run turtlesim turtlesim_node"', 'bg "ros2 run turtlesim turtlesim_node $TURTLE_GEOM"'),
+        ],
         "ch09.sh": [
             ("500x500+40+80", "420x420+2916+40"),
             ("500x500+680+80", "420x420+2916+530"),
