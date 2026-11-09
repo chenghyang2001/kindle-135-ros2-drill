@@ -41,6 +41,10 @@ Kindle 135《ROS 2 from Scratch》（Packt）逐章演練包：在 **Windows 11 
 - 座標散在多個檔案，換排列時要一起改，清單見 `NEW-PC-CHECKLIST.md` 第 4 節。外框換算：Windows left ≈ -1280 + X - 32、寬 ≈ W + 76，螢幕 3 內需 X + W ≤ 1226。
 - 改書本 launch／rviz 設定時只改**工作區複製檔**並標「本演練加」，書本 repo 原檔不動。
 
+## 開工前必讀（2026-11-09）
+
+開任何圖形視窗前，先照全域規則 `~/.claude/instructions/wslg-drill-preflight.md` 檢查：`/mnt/wslg/weston.log` 的「Failed to open」要是 0，視窗標題出現 `[WARN:COPY MODE]` 就 `wsl --shutdown` 重開（2026-10-26、11-09 各踩過一次）。HP1 螢幕分工：圖形視窗放螢幕 2（左）、tmux 教練＋練習放螢幕 3（右）、螢幕 1 不放。
+
 ## 兩螢幕版（2026-11-03 起，目前這台的配置）
 
 進度與操作見 `HANDOFF.md`。重點：
